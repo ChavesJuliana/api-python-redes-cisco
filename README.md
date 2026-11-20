@@ -1,45 +1,73 @@
-# Entorno de virtualización Python
+# TP4 Integrador de Redes de Computadoras · UNLaM
 
-# Pasos de instalación en Linux:
+Los scripts consultan el inventario del Cisco Network Controller de Packet Tracer. La topología del TP usa la IP `10.44.0.83`.
 
-## 1. Clonación del proyecto
+## 1. Preparar Python
 
-Desde la terminal ejecutar:
+En PowerShell, ejecutá estos comandos desde la raíz del repositorio.
 
-**git clone** <URL_del_repositorio> <nombre_de_la_carpeta_de_destino>
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-Luego ejecutar **cd** <nombre_de_la_carpeta_de_destino>. Esta carpeta será la raíz de nuestro proyecto en Python.
+En Linux, usá estos comandos.
 
-## 2. Creación del entorno virtual
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
 
-Supongamos que el nombre que le damos al entorno virtual es **cisco**, entonces se creará una carpeta **cisco** con todas las librerías y dependencias necesarias paea nuestro proyecto. 
+## 2. Confirmar el acceso a la API
 
-La manera de realizarlo es la siguiente:
+Abrí la topología en Packet Tracer y habilitá **Enable External Access for Network Controller REST API** en **Preferences**. En el controlador, abrí **Config → Real World Access**, elegí el puerto en **HTTP Port** y marcá **Access Enabled**. Confirmá en **Server Status** que el servidor esté activo.
 
-# python3 -m venv <nombre_del_entorno>
-Ejemplo: python3 -m venv cisco
+La IP `10.44.0.83` identifica al controlador dentro de la topología. Desde Windows, Packet Tracer expone la API en `localhost`. El ejemplo usa el puerto `58000` de los scripts originales. Si configuraste otro, cambialo en ambos comandos.
 
-Para activar el entorno escribimos **source cisco/bin/activate**, en la carpeta raíz del proyecto. El nombre del entorno virtual aparecerá entre paréntesis ().
+```powershell
+Test-NetConnection localhost -Port 58000
+$api = 'http://localhost:58000/api/v1'
+```
 
-## 3. Instalación de las dependencias, en este caso las librerías requests y tabulate
+Seguí con la autenticación cuando `TcpTestSucceeded` sea `True`. La configuración se describe en la ayuda integrada de Cisco Packet Tracer, en **Network Controllers → Real World Access**.
 
-En la carpeta raíz de nuestro proyecto y dentro del entorno virtual escribimos: **pip install -r requirements.txt**
+## 3. Ejecutar los cuatro scripts de la cátedra y la auditoría
 
-## 4. Selección del intérprete Python para nuestro entorno virtual
+Desde la raíz del repositorio, ejecutá este comando en la terminal PowerShell de VS Code. El lanzador adapta en memoria las llamadas de los originales para usar la URL indicada y las credenciales ingresadas en la terminal. Las solicitudes HTTP se hacen al controlador. La clave se ingresa sin eco y el ticket se oculta en la salida.
 
-<img width="881" height="118" alt="image" src="https://github.com/user-attachments/assets/18c41d8e-d338-48b6-953c-b2499c57319f" />
+```powershell
+.\.venv\Scripts\python.exe .\src\ejecutar_catedra.py todos --url http://localhost:58000/api/v1
+```
 
-<img width="736" height="412" alt="image" src="https://github.com/user-attachments/assets/2a795fcd-2cf8-47ef-a5a6-d21e09ce967f" />
+Para ejecutar un único script, reemplazá `todos` por su número. El lanzador obtiene un ticket automáticamente si la consulta requiere uno.
 
-Tal como se ve en la figura seleccionamos Python 3.10.12 (cisco) que se mostrará como entorno recomendado.
+Si un registro omite un campo que los originales muestran, el lanzador lo presenta como «No informado». Si la respuesta de inventario tiene otra estructura, el error indica el endpoint y qué parte del formato falló.
 
-## 5. Desactivación del entorno virtual
+| Número | Script | Resultado esperado |
+| --- | --- | --- |
+| 01 | `01_get-ticket.py` | Confirmación de que se obtuvo un ticket |
+| 02 | `02_get-network-device.py` | Nombres, plataformas e IP de administración de los dispositivos |
+| 03 | `03_get-host.py` | Nombres, IP, MAC e interfaces de conexión de los hosts |
+| 04 | `04_tabulate.py` | Tablas de dispositivos y hosts |
 
-Simplemente escribimos en la línea de comandos: **deactivate**
+## 4. Ejecutar solo el script propio
 
+```powershell
+.\.venv\Scripts\python.exe src/05_auditar_inventario.py --url $api
+```
 
+El script consulta `/network-device` y `/host` con un mismo ticket. Cuenta los registros y marca IP ausentes, inválidas o repetidas, incluso cuando la misma IP aparece en ambas listas. Una IP repetida es un hallazgo del inventario que se puede contrastar con la topología. El script solo solicita el ticket y consulta datos.
 
-## Antes de ejecutar los scripts
+## 5. Registrar los resultados
 
-- **Credenciales del controlador:** los scripts usan el usuario `cisco` y la clave `cisco123!`. Si en tu Network Controller creaste otro usuario, cambialos en `01_get-ticket.py` y en `04_tabulate.py`.
-- **Ticket (X-Auth-Token):** `02_get-network-device.py` y `03_get-host.py` traen escrito un ticket de ejemplo que **no va a funcionar** en tu Packet Tracer, porque el controlador genera uno nuevo en cada sesión y vence. Ejecutá primero `01_get-ticket.py`, copiá el ticket que muestra y reemplazalo en el header `X-Auth-Token` de esos dos scripts. `04_tabulate.py` no necesita este paso: pide el ticket solo.
+| Comprobación | Resultado en este entorno |
+| --- | --- |
+| Conexión a `10.44.0.83:58000` | Tiempo de espera agotado |
+| Conexión local a `127.0.0.1:58000` | Packet Tracer escucha en el puerto. La API devolvió HTTP 403 a una consulta de inventario sin ticket. |
+| `01_get-ticket.py` | El controlador emitió un ticket con las credenciales ingresadas localmente. |
+| `02_get-network-device.py` | HTTP 200. Se listaron 12 dispositivos. |
+| `03_get-host.py` | HTTP 200. Se listaron 15 hosts. |
+| `04_tabulate.py` | HTTP 201 al solicitar el ticket. Se mostraron las tablas con 12 dispositivos y 15 hosts. |
+| `05_auditar_inventario.py` | Se auditaron 12 dispositivos y 15 hosts. No se encontraron IP ausentes, inválidas ni repetidas en los registros recibidos. |
+
+Un dispositivo llegó sin los campos `hostname` y `softwareVersion`. El lanzador mostró «No informado» para esos campos y completó la ejecución. La auditoría revisó la IP de administración de cada dispositivo y la IP de cada host que devolvió el controlador. El README registra los resultados agregados de la corrida.
